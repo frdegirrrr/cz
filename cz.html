@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CZ</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1c1e21;
+    --muted: #6b7280;
+    --border: #d9dce1;
+    --accent: #2f6fed;
+    --accent-text: #ffffff;
+    --mono-bg: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --card: #21242b;
+      --text: #e8eaed;
+      --muted: #9aa0aa;
+      --border: #363a42;
+      --accent: #4f86ff;
+      --accent-text: #ffffff;
+      --mono-bg: #2a2e36;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 48px;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 20px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  label { display: block; font-weight: 600; margin-bottom: 8px; font-size: .95rem; }
+  textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+  button {
+    padding: 10px 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.08); }
+  .out-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .out-head label { margin: 0; }
+  .result {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--mono-bg);
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 48px;
+    font-size: 1.1rem;
+    font-family: "Consolas", "SF Mono", ui-monospace, monospace;
+  }
+  .copy { padding: 6px 12px; font-size: .85rem; }
+  .copied { color: var(--accent); font-size: .82rem; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CZ</h1>
+
+  <div class="card">
+    <label for="input">Текст</label>
+    <textarea id="input" placeholder="Введите текст…" autofocus></textarea>
+    <div class="buttons" style="margin-top:16px;">
+      <button class="primary" id="btnEnc">Зашифровать</button>
+      <button id="btnDec">Расшифровать</button>
+    </div>
+  </div>
+
+  <div class="card" id="resultCard" hidden>
+    <div class="out-head">
+      <label>Результат</label>
+      <span>
+        <button class="copy" id="btnCopy">Копировать</button>
+        <span class="copied" id="copied" hidden>скопировано</span>
+      </span>
+    </div>
+    <div class="result" id="result"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // По 33 буквы в каждом алфавите.
+  var RU_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+  var GE = "აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ";
+  var GE_CHARS = Array.from(GE); // символы вне BMP-безопасны через массив
+  var N = RU_LOWER.length; // 33
+
+  // Ввод: строчные + переносы строк -> пробел.
+  function normalize(text) {
+    return text.toLowerCase().replace(/[\r\n]+/g, " ");
+  }
+
+  // Зашифровать: сдвиги по позиции буквы, затем перевод на грузинский.
+  // Нумеруются только буквы: каждая 3-я -> +2, остальные -> -1 (по модулю 33).
+  function encrypt(text) {
+    text = normalize(text);
+    var out = "", no = 0;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      var pos = RU_LOWER.indexOf(ch);
+      if (pos < 0) { out += ch; continue; }
+      no++;
+      var delta = (no % 3 === 0) ? 2 : -1;
+      out += GE_CHARS[((pos + delta) % N + N) % N];
+    }
+    return out;
+  }
+
+  // Расшифровать: грузинский -> русский, затем обратные сдвиги
+  // (каждая 3-я буква -> -2, остальные -> +1). Выдаёт строчный русский текст.
+  function decrypt(text) {
+    var chars = Array.from(text);
+    var out = "", no = 0;
+    for (var i = 0; i < chars.length; i++) {
+      var ch = chars[i];
+      var pos = GE_CHARS.indexOf(ch);
+      if (pos < 0) { out += ch; continue; }
+      no++;
+      var delta = (no % 3 === 0) ? -2 : 1;
+      out += RU_LOWER[((pos + delta) % N + N) % N];
+    }
+    return out;
+  }
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function showResult(text) {
+    $("result").textContent = text;
+    $("resultCard").hidden = false;
+    $("copied").hidden = true;
+  }
+
+  $("btnEnc").addEventListener("click", function () {
+    showResult(encrypt($("input").value));
+  });
+
+  $("btnDec").addEventListener("click", function () {
+    showResult(decrypt($("input").value));
+  });
+
+  $("btnCopy").addEventListener("click", function () {
+    var text = $("result").textContent;
+    var done = function () {
+      var c = $("copied");
+      c.hidden = false;
+      setTimeout(function () { c.hidden = true; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+    function fallbackCopy() {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+  });
+})();
+</script>
+</body>
+</html>
