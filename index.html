@@ -14,6 +14,7 @@
     --accent: #2f6fed;
     --accent-text: #ffffff;
     --mono-bg: #f0f2f5;
+    --danger: #c0392b;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -25,6 +26,7 @@
       --accent: #4f86ff;
       --accent-text: #ffffff;
       --mono-bg: #2a2e36;
+      --danger: #ff6b5e;
     }
   }
   * { box-sizing: border-box; }
@@ -47,7 +49,6 @@
   label { display: block; font-weight: 600; margin-bottom: 8px; font-size: .95rem; }
   textarea {
     width: 100%;
-    min-height: 120px;
     resize: vertical;
     padding: 12px;
     border: 1px solid var(--border);
@@ -56,7 +57,12 @@
     color: var(--text);
     font: inherit;
   }
+  textarea.text { min-height: 120px; }
+  textarea.key { min-height: 92px; font-family: "Consolas", ui-monospace, monospace; font-size: .8rem; }
   textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .modes { display: flex; gap: 20px; flex-wrap: wrap; }
+  .mode-opt { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; margin: 0; }
+  .mode-opt input { accent-color: var(--accent); cursor: pointer; }
   .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
   button {
     padding: 10px 18px;
@@ -69,9 +75,10 @@
     cursor: pointer;
   }
   button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .55; cursor: default; }
   button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   button.primary:hover { filter: brightness(1.08); }
-  .out-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .out-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
   .out-head label { margin: 0; }
   .result {
     white-space: pre-wrap;
@@ -80,11 +87,17 @@
     border-radius: 8px;
     padding: 12px;
     min-height: 48px;
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     font-family: "Consolas", "SF Mono", ui-monospace, monospace;
   }
-  .copy { padding: 6px 12px; font-size: .85rem; }
+  .copy { padding: 6px 12px; font-size: .85rem; font-weight: 600; }
   .copied { color: var(--accent); font-size: .82rem; margin-left: 8px; }
+  .keyfield { margin-bottom: 14px; }
+  .keyfield:last-child { margin-bottom: 0; }
+  .hint { color: var(--muted); font-size: .82rem; margin: 8px 0 0; }
+  .secret { color: var(--danger); font-weight: 600; }
+  .field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .field-head label { margin: 0; }
 </style>
 </head>
 <body>
@@ -92,8 +105,48 @@
   <h1>CZ</h1>
 
   <div class="card">
+    <label>Режим</label>
+    <div class="modes">
+      <label class="mode-opt"><input type="radio" name="mode" value="ruge" checked> Грузинский шифр</label>
+      <label class="mode-opt"><input type="radio" name="mode" value="rsa"> Ключи (RSA)</label>
+    </div>
+  </div>
+
+  <!-- RSA: генерация и хранение пары ключей -->
+  <div class="card" id="keysCard" hidden>
+    <div class="field-head">
+      <label>Ваши ключи</label>
+      <button class="copy" id="btnGen">Сгенерировать пару</button>
+    </div>
+    <p class="hint" id="genHint">Нажмите «Сгенерировать пару», чтобы создать новый публичный и приватный ключ.</p>
+
+    <div class="keyfield" id="pubField" hidden>
+      <div class="field-head">
+        <label for="pubKey">Публичный ключ <span class="hint">(можно делиться — им вам шлют шифровки)</span></label>
+        <button class="copy" id="btnCopyPub">Копировать</button>
+      </div>
+      <textarea class="key" id="pubKey" spellcheck="false" readonly></textarea>
+    </div>
+
+    <div class="keyfield" id="prvField" hidden>
+      <div class="field-head">
+        <label for="prvKey">Приватный ключ <span class="secret">храните в секрете!</span></label>
+        <button class="copy" id="btnCopyPrv">Копировать</button>
+      </div>
+      <textarea class="key" id="prvKey" spellcheck="false" readonly></textarea>
+    </div>
+  </div>
+
+  <div class="card">
     <label for="input">Текст</label>
-    <textarea id="input" placeholder="Введите текст…" autofocus></textarea>
+    <textarea class="text" id="input" placeholder="Введите текст…" autofocus></textarea>
+
+    <div class="keyfield" id="opKeyBlock" style="margin-top:14px;" hidden>
+      <label for="opKey">Ключ для операции</label>
+      <textarea class="key" id="opKey" spellcheck="false"
+        placeholder="Публичный ключ получателя — для «Зашифровать». Ваш приватный ключ — для «Расшифровать»."></textarea>
+    </div>
+
     <div class="buttons" style="margin-top:16px;">
       <button class="primary" id="btnEnc">Зашифровать</button>
       <button id="btnDec">Расшифровать</button>
@@ -116,20 +169,21 @@
 (function () {
   "use strict";
 
-  // По 33 буквы в каждом алфавите.
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------- Грузинский шифр (сдвиги по буквам + перевод) ---------- */
+
   var RU_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
   var GE = "აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ";
-  var GE_CHARS = Array.from(GE); // символы вне BMP-безопасны через массив
+  var GE_CHARS = Array.from(GE);
   var N = RU_LOWER.length; // 33
 
-  // Ввод: строчные + переносы строк -> пробел.
   function normalize(text) {
     return text.toLowerCase().replace(/[\r\n]+/g, " ");
   }
 
-  // Зашифровать: сдвиги по позиции буквы, затем перевод на грузинский.
-  // Нумеруются только буквы: каждая 3-я -> +2, остальные -> -1 (по модулю 33).
-  function encrypt(text) {
+  // Зашифровать: каждая 3-я буква +2, остальные -1, затем перевод на грузинский.
+  function geEncrypt(text) {
     text = normalize(text);
     var out = "", no = 0;
     for (var i = 0; i < text.length; i++) {
@@ -143,9 +197,8 @@
     return out;
   }
 
-  // Расшифровать: грузинский -> русский, затем обратные сдвиги
-  // (каждая 3-я буква -> -2, остальные -> +1). Выдаёт строчный русский текст.
-  function decrypt(text) {
+  // Расшифровать: грузинский -> русский, затем обратные сдвиги.
+  function geDecrypt(text) {
     var chars = Array.from(text);
     var out = "", no = 0;
     for (var i = 0; i < chars.length; i++) {
@@ -159,7 +212,90 @@
     return out;
   }
 
-  var $ = function (id) { return document.getElementById(id); };
+  /* ---------- RSA (Web Crypto: RSA-OAEP 2048 + AES-GCM 256, гибрид) ---------- */
+
+  function hasCrypto() {
+    return typeof crypto !== "undefined" && crypto.subtle && crypto.getRandomValues;
+  }
+  function ensureCrypto() {
+    if (!hasCrypto()) {
+      throw new Error("RSA недоступен: нужен защищённый контекст (HTTPS). Откройте сайт по ссылке https://frdegirrrr.github.io/cz/");
+    }
+  }
+
+  // ArrayBuffer <-> base64
+  function bufToB64(buf) {
+    var bytes = new Uint8Array(buf), bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function b64ToBuf(b64) {
+    var bin = atob(b64.replace(/\s+/g, "")), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  // DER <-> PEM
+  function toPem(buf, label) {
+    var b = bufToB64(buf).match(/.{1,64}/g).join("\n");
+    return "-----BEGIN " + label + "-----\n" + b + "\n-----END " + label + "-----";
+  }
+  function pemToBuf(pem) {
+    var body = pem.replace(/-----BEGIN [^-]+-----/, "").replace(/-----END [^-]+-----/, "");
+    return b64ToBuf(body);
+  }
+
+  function genKeyPair() {
+    return crypto.subtle.generateKey(
+      { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+      true, ["encrypt", "decrypt"]);
+  }
+  function importPublic(pem) {
+    return crypto.subtle.importKey("spki", pemToBuf(pem), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+  }
+  function importPrivate(pem) {
+    return crypto.subtle.importKey("pkcs8", pemToBuf(pem), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["decrypt"]);
+  }
+
+  // Гибрид: AES-GCM шифрует текст, RSA-OAEP шифрует AES-ключ.
+  // Формат результата: base64(encAesKey).base64(iv).base64(ciphertext)
+  function encryptHybrid(pubKey, plaintext) {
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    var aesKey;
+    return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])
+      .then(function (k) { aesKey = k; return crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, new TextEncoder().encode(plaintext)); })
+      .then(function (ct) {
+        return crypto.subtle.exportKey("raw", aesKey).then(function (rawAes) {
+          return crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, rawAes).then(function (encAes) {
+            return bufToB64(encAes) + "." + bufToB64(iv.buffer) + "." + bufToB64(ct);
+          });
+        });
+      });
+  }
+  function decryptHybrid(prvKey, blob) {
+    var parts = blob.trim().split(".");
+    if (parts.length !== 3) return Promise.reject(new Error("неверный формат шифртекста"));
+    var encAes = b64ToBuf(parts[0]), iv = new Uint8Array(b64ToBuf(parts[1])), ct = b64ToBuf(parts[2]);
+    return crypto.subtle.decrypt({ name: "RSA-OAEP" }, prvKey, encAes)
+      .then(function (rawAes) { return crypto.subtle.importKey("raw", rawAes, { name: "AES-GCM" }, false, ["decrypt"]); })
+      .then(function (aesKey) { return crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, aesKey, ct); })
+      .then(function (pt) { return new TextDecoder().decode(pt); });
+  }
+
+  /* ---------- UI ---------- */
+
+  function isRSA() {
+    return document.querySelector('input[name="mode"]:checked').value === "rsa";
+  }
+  function updateModeUI() {
+    var rsa = isRSA();
+    $("keysCard").hidden = !rsa;
+    $("opKeyBlock").hidden = !rsa;
+    $("resultCard").hidden = true;
+  }
+  var radios = document.querySelectorAll('input[name="mode"]');
+  for (var r = 0; r < radios.length; r++) radios[r].addEventListener("change", updateModeUI);
+  updateModeUI();
 
   function showResult(text) {
     $("result").textContent = text;
@@ -167,35 +303,72 @@
     $("copied").hidden = true;
   }
 
-  $("btnEnc").addEventListener("click", function () {
-    showResult(encrypt($("input").value));
-  });
-
-  $("btnDec").addEventListener("click", function () {
-    showResult(decrypt($("input").value));
-  });
-
-  $("btnCopy").addEventListener("click", function () {
-    var text = $("result").textContent;
+  function copyFrom(getText, feedbackEl) {
+    var text = getText();
     var done = function () {
-      var c = $("copied");
-      c.hidden = false;
-      setTimeout(function () { c.hidden = true; }, 1500);
+      if (!feedbackEl) return;
+      feedbackEl.hidden = false;
+      setTimeout(function () { feedbackEl.hidden = true; }, 1500);
     };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, fallbackCopy);
-    } else {
-      fallbackCopy();
-    }
-    function fallbackCopy() {
+    function fallback() {
       var ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
+      ta.value = text; document.body.appendChild(ta); ta.select();
       try { document.execCommand("copy"); done(); } catch (e) {}
       document.body.removeChild(ta);
     }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else { fallback(); }
+  }
+
+  // Кнопки шифрования/расшифровки
+  $("btnEnc").addEventListener("click", function () {
+    if (!isRSA()) { showResult(geEncrypt($("input").value)); return; }
+    try {
+      ensureCrypto();
+      importPublic($("opKey").value)
+        .then(function (pub) { return encryptHybrid(pub, $("input").value); })
+        .then(showResult)
+        .catch(function (e) { showResult("Ошибка шифрования. Проверьте, что в «Ключ для операции» вставлен ПУБЛИЧНЫЙ ключ, а текст не пустой.\n\n(" + e.message + ")"); });
+    } catch (e) { showResult(e.message); }
   });
+
+  $("btnDec").addEventListener("click", function () {
+    if (!isRSA()) { showResult(geDecrypt($("input").value)); return; }
+    try {
+      ensureCrypto();
+      importPrivate($("opKey").value)
+        .then(function (prv) { return decryptHybrid(prv, $("input").value); })
+        .then(showResult)
+        .catch(function (e) { showResult("Ошибка расшифровки. Проверьте, что в «Ключ для операции» вставлен ваш ПРИВАТНЫЙ ключ, а в «Текст» — корректный шифртекст.\n\n(" + e.message + ")"); });
+    } catch (e) { showResult(e.message); }
+  });
+
+  // Генерация пары ключей
+  $("btnGen").addEventListener("click", function () {
+    try {
+      ensureCrypto();
+      $("btnGen").disabled = true;
+      $("genHint").textContent = "Генерирую ключи…";
+      var kp;
+      genKeyPair()
+        .then(function (k) { kp = k; return Promise.all([crypto.subtle.exportKey("spki", kp.publicKey), crypto.subtle.exportKey("pkcs8", kp.privateKey)]); })
+        .then(function (arr) {
+          $("pubKey").value = toPem(arr[0], "PUBLIC KEY");
+          $("prvKey").value = toPem(arr[1], "PRIVATE KEY");
+          $("pubField").hidden = false;
+          $("prvField").hidden = false;
+          $("genHint").textContent = "Пара создана. Публичным делитесь, приватный храните в секрете.";
+        })
+        .catch(function (e) { $("genHint").textContent = "Ошибка генерации: " + e.message; })
+        .then(function () { $("btnGen").disabled = false; });
+    } catch (e) { $("genHint").textContent = e.message; $("btnGen").disabled = false; }
+  });
+
+  // Копирование
+  $("btnCopy").addEventListener("click", function () { copyFrom(function () { return $("result").textContent; }, $("copied")); });
+  $("btnCopyPub").addEventListener("click", function () { copyFrom(function () { return $("pubKey").value; }, null); });
+  $("btnCopyPrv").addEventListener("click", function () { copyFrom(function () { return $("prvKey").value; }, null); });
 })();
 </script>
 </body>
