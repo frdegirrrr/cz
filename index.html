@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Код Цезаря</title>
+<title>CZ</title>
 <style>
   :root {
     --bg: #f4f5f7;
@@ -14,7 +14,6 @@
     --accent: #2f6fed;
     --accent-text: #ffffff;
     --mono-bg: #f0f2f5;
-    --hit: #fff6d6;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -26,7 +25,6 @@
       --accent: #4f86ff;
       --accent-text: #ffffff;
       --mono-bg: #2a2e36;
-      --hit: #3a3620;
     }
   }
   * { box-sizing: border-box; }
@@ -38,8 +36,7 @@
     font: 16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   .wrap { max-width: 760px; margin: 0 auto; }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; }
-  .sub { color: var(--muted); margin: 0 0 24px; font-size: .9rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 20px; }
   .card {
     background: var(--card);
     border: 1px solid var(--border);
@@ -59,23 +56,8 @@
     color: var(--text);
     font: inherit;
   }
-  textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .modes { display: flex; gap: 20px; flex-wrap: wrap; }
-  .mode-opt { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; margin: 0; }
-  .mode-opt input { accent-color: var(--accent); cursor: pointer; }
-  .shift-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .shift-row input[type=range] { flex: 1; min-width: 160px; accent-color: var(--accent); }
-  .shift-row input[type=number] {
-    width: 76px;
-    padding: 8px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--bg);
-    color: var(--text);
-    font: inherit;
-    text-align: center;
-  }
-  .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; }
   button {
     padding: 10px 18px;
     border: 1px solid var(--border);
@@ -98,17 +80,11 @@
     border-radius: 8px;
     padding: 12px;
     min-height: 48px;
+    font-size: 1.1rem;
     font-family: "Consolas", "SF Mono", ui-monospace, monospace;
   }
   .copy { padding: 6px 12px; font-size: .85rem; }
   .copied { color: var(--accent); font-size: .82rem; margin-left: 8px; }
-  table { width: 100%; border-collapse: collapse; font-family: "Consolas", ui-monospace, monospace; font-size: .92rem; }
-  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; }
-  td.k { width: 56px; color: var(--muted); white-space: nowrap; }
-  td.t { word-break: break-word; }
-  tr.hit td { background: var(--hit); }
-  .hint { color: var(--muted); font-size: .82rem; margin: 10px 0 0; }
 </style>
 </head>
 <body>
@@ -116,26 +92,8 @@
   <h1>CZ</h1>
 
   <div class="card">
-    <label>Режим</label>
-    <div class="modes">
-      <label class="mode-opt"><input type="radio" name="mode" value="classic" checked> Классический</label>
-      <label class="mode-opt"><input type="radio" name="mode" value="complex"> Усложнённый</label>
-    </div>
-  </div>
-
-  <div class="card">
     <label for="input">Текст</label>
     <textarea id="input" placeholder="Введите текст…" autofocus></textarea>
-  </div>
-
-  <div class="card">
-    <div id="shiftBlock">
-      <label for="shiftNum">Сдвиг (ключ)</label>
-      <div class="shift-row">
-        <input type="range" id="shiftRange" min="1" max="32" value="3">
-        <input type="number" id="shiftNum" min="1" max="32" value="3">
-      </div>
-    </div>
     <div class="buttons" style="margin-top:16px;">
       <button class="primary" id="btnEnc">Зашифровать</button>
       <button id="btnDec">Расшифровать</button>
@@ -152,91 +110,56 @@
     </div>
     <div class="result" id="result"></div>
   </div>
-
 </div>
 
 <script>
 (function () {
   "use strict";
 
-  var LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
-  var UPPER = LOWER.toUpperCase();
-  var N = LOWER.length; // 33
+  // По 33 буквы в каждом алфавите.
+  var RU_LOWER = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+  var GE = "აბგდევზთიკლმნოპჟრსტუფქღყშჩცძწჭხჯჰ";
+  var GE_CHARS = Array.from(GE); // символы вне BMP-безопасны через массив
+  var N = RU_LOWER.length; // 33
 
-  function shiftChar(ch, k) {
-    var i = LOWER.indexOf(ch);
-    if (i >= 0) return LOWER[(i + k) % N];
-    i = UPPER.indexOf(ch);
-    if (i >= 0) return UPPER[(i + k) % N];
-    return ch;
+  // Ввод: строчные + переносы строк -> пробел.
+  function normalize(text) {
+    return text.toLowerCase().replace(/[\r\n]+/g, " ");
   }
 
-  // k может быть отрицательным — нормализуем в диапазон [0, N)
-  function caesar(text, k) {
-    k = ((k % N) + N) % N;
-    var out = "";
-    for (var i = 0; i < text.length; i++) out += shiftChar(text[i], k);
+  // Зашифровать: сдвиги по позиции буквы, затем перевод на грузинский.
+  // Нумеруются только буквы: каждая 3-я -> +2, остальные -> -1 (по модулю 33).
+  function encrypt(text) {
+    text = normalize(text);
+    var out = "", no = 0;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      var pos = RU_LOWER.indexOf(ch);
+      if (pos < 0) { out += ch; continue; }
+      no++;
+      var delta = (no % 3 === 0) ? 2 : -1;
+      out += GE_CHARS[((pos + delta) % N + N) % N];
+    }
     return out;
   }
 
-  // Усложнённый режим: нумеруем только буквы; каждая 3-я -> +2, остальные -> -1.
-  // encrypt=false выполняет обратные сдвиги (расшифровка).
-  function complexTransform(text, encrypt) {
-    text = text.toLowerCase().replace(/[\r\n]+/g, " ");
-    var out = "";
-    var letterNo = 0;
-    for (var i = 0; i < text.length; i++) {
-      var ch = text[i];
-      var pos = LOWER.indexOf(ch); // после toLowerCase важен только нижний регистр
+  // Расшифровать: грузинский -> русский, затем обратные сдвиги
+  // (каждая 3-я буква -> -2, остальные -> +1). Выдаёт строчный русский текст.
+  function decrypt(text) {
+    var chars = Array.from(text);
+    var out = "", no = 0;
+    for (var i = 0; i < chars.length; i++) {
+      var ch = chars[i];
+      var pos = GE_CHARS.indexOf(ch);
       if (pos < 0) { out += ch; continue; }
-      letterNo++;
-      var delta = (letterNo % 3 === 0) ? 2 : -1;
-      if (!encrypt) delta = -delta;
-      out += LOWER[((pos + delta) % N + N) % N];
+      no++;
+      var delta = (no % 3 === 0) ? -2 : 1;
+      out += RU_LOWER[((pos + delta) % N + N) % N];
     }
     return out;
   }
 
   var $ = function (id) { return document.getElementById(id); };
-  var input = $("input");
-  var range = $("shiftRange");
-  var num = $("shiftNum");
-
-  function getShift() {
-    var v = parseInt(num.value, 10);
-    if (isNaN(v)) v = 1;
-    if (v < 1) v = 1;
-    if (v > 32) v = 32;
-    return v;
-  }
-
-  // синхронизация ползунка и числа
-  range.addEventListener("input", function () { num.value = range.value; });
-  num.addEventListener("input", function () {
-    var v = getShift();
-    range.value = v;
-  });
-  num.addEventListener("blur", function () {
-    var v = getShift();
-    num.value = v;
-    range.value = v;
-  });
-
-  function isComplex() {
-    return document.querySelector('input[name="mode"]:checked').value === "complex";
-  }
-
-  function updateModeUI() {
-    $("shiftBlock").hidden = isComplex();
-    // прячем старый вывод, чтобы результат не относили к другому режиму
-    $("resultCard").hidden = true;
-  }
-
-  var radios = document.querySelectorAll('input[name="mode"]');
-  for (var r = 0; r < radios.length; r++) {
-    radios[r].addEventListener("change", updateModeUI);
-  }
-  updateModeUI();
 
   function showResult(text) {
     $("result").textContent = text;
@@ -245,13 +168,11 @@
   }
 
   $("btnEnc").addEventListener("click", function () {
-    if (isComplex()) showResult(complexTransform(input.value, true));
-    else showResult(caesar(input.value, getShift()));
+    showResult(encrypt($("input").value));
   });
 
   $("btnDec").addEventListener("click", function () {
-    if (isComplex()) showResult(complexTransform(input.value, false));
-    else showResult(caesar(input.value, -getShift()));
+    showResult(decrypt($("input").value));
   });
 
   $("btnCopy").addEventListener("click", function () {
